@@ -1,0 +1,139 @@
+name: Deploy
+
+on:
+  push:
+    branches: ["main"]
+
+env:
+  TERRAFORM_VERSION: "1.8.0"
+  HELM_VERSION: "3.15.0"
+
+jobs:
+  deploy-aws:
+    name: Deploy to AWS EKS
+    runs-on: ubuntu-latest
+    environment: production-aws
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform init (AWS)
+        run: terraform init
+        working-directory: infrastructure/aws
+
+      - name: Terraform apply (AWS)
+        run: terraform apply -auto-approve
+        working-directory: infrastructure/aws
+        env:
+          TF_VAR_environment: "production"
+          TF_VAR_cluster_name: ${{ secrets.EKS_CLUSTER_NAME }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ secrets.AWS_REGION }} \
+            --name ${{ secrets.EKS_CLUSTER_NAME }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Add Helm repos
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+
+      - name: Create namespace and secrets
+        run: |
+          kubectl create namespace sre-platform --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic sre-platform-secrets \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=DATADOG_API_KEY="${{ secrets.DATADOG_API_KEY }}" \
+            --from-literal=DATADOG_APP_KEY="${{ secrets.DATADOG_APP_KEY }}" \
+            --from-literal=SERVICENOW_INSTANCE_URL="${{ secrets.SERVICENOW_INSTANCE_URL }}" \
+            --from-literal=SERVICENOW_USERNAME="${{ secrets.SERVICENOW_USERNAME }}" \
+            --from-literal=SERVICENOW_PASSWORD="${{ secrets.SERVICENOW_PASSWORD }}" \
+            --namespace sre-platform \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Helm upgrade (AWS EKS)
+        run: |
+          helm upgrade --install agentic-sre ./helm/agentic-sre \
+            --namespace sre-platform \
+            --set image.tag=${{ github.sha }} \
+            --set ingress.hosts[0].host="${{ secrets.AWS_INGRESS_HOST }}" \
+            --wait --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/agentic-sre -n sre-platform --timeout=5m
+          kubectl get pods -n sre-platform
+
+  deploy-azure:
+    name: Deploy to Azure AKS
+    runs-on: ubuntu-latest
+    environment: production-azure
+    needs: deploy-aws
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform init (Azure)
+        run: terraform init
+        working-directory: infrastructure/azure
+
+      - name: Terraform apply (Azure)
+        run: terraform apply -auto-approve
+        working-directory: infrastructure/azure
+        env:
+          TF_VAR_environment: "production"
+          TF_VAR_resource_group_name: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          TF_VAR_location: ${{ secrets.AZURE_LOCATION }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Helm upgrade (Azure AKS)
+        run: |
+          kubectl create namespace sre-platform --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install agentic-sre ./helm/agentic-sre \
+            --namespace sre-platform \
+            --set image.tag=${{ github.sha }} \
+            --set ingress.hosts[0].host="${{ secrets.AZURE_INGRESS_HOST }}" \
+            --wait --timeout 10m
+
+      - name: Verify deployment (Azure)
+        run: |
+          kubectl rollout status deployment/agentic-sre -n sre-platform --timeout=5m
+          kubectl get pods -n sre-platform

@@ -1,0 +1,23 @@
+{
+  "agent_id": "metrics-agent",
+  "name": "Metrics Analysis Agent",
+  "description": "Analyzes metrics from Datadog, CloudWatch, and Azure Monitor",
+  "capabilities": [
+    "metrics_analysis",
+    "anomaly_detection",
+    "cost_optimization",
+    "performance_analysis"
+  ],
+  "endpoint": "http://localhost:8011",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "name": "analyze_metrics",
+      "description": "Analyze application and infrastructure metrics"
+    },
+    {
+      "name": "detect_anomalies",
+      "description": "Detect metric anomalies using ML"
+    }
+  ]
+}

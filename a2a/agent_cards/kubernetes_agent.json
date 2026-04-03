@@ -1,0 +1,24 @@
+{
+  "agent_id": "kubernetes-agent",
+  "name": "Kubernetes Remediation Agent",
+  "description": "Diagnoses and remediates Kubernetes infrastructure issues",
+  "capabilities": [
+    "pod_diagnosis",
+    "pod_restart",
+    "deployment_scaling",
+    "node_inspection",
+    "log_analysis"
+  ],
+  "endpoint": "http://localhost:8010",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "name": "diagnose_pod",
+      "description": "Diagnose pod health issues"
+    },
+    {
+      "name": "remediate_pod",
+      "description": "Restart or scale pods"
+    }
+  ]
+}

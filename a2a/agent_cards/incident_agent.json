@@ -1,0 +1,23 @@
+{
+  "agent_id": "incident-agent",
+  "name": "Incident Management Agent",
+  "description": "Creates and manages ServiceNow incidents for SRE alerts",
+  "capabilities": [
+    "incident_creation",
+    "incident_update",
+    "escalation",
+    "notification"
+  ],
+  "endpoint": "http://localhost:8012",
+  "version": "1.0.0",
+  "skills": [
+    {
+      "name": "create_incident",
+      "description": "Create ServiceNow incident"
+    },
+    {
+      "name": "escalate",
+      "description": "Escalate to on-call engineer"
+    }
+  ]
+}
